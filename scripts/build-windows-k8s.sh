@@ -17,28 +17,34 @@ while getopts ":v:p:" opt; do
     p)
       acs_patch_version=${OPTARG}
       ;;
+    h)
+	usage
+	exit
+      ;;
     *)
-			usage
-			exit
       ;;
   esac
 done
-
-if [ -z "${version}" ] || [ -z "${acs_patch_version}" ]; then
-    usage
-		exit 1
-fi
 
 if [ -z "${AZURE_STORAGE_CONNECTION_STRING}" ] || [ -z "${AZURE_STORAGE_CONTAINER_NAME}" ]; then
     echo '$AZURE_STORAGE_CONNECTION_STRING and $AZURE_STORAGE_CONTAINER_NAME need to be set for upload to Azure Blob Storage.'
 		exit 1
 fi
 
-KUBERNETES_RELEASE=$(echo $version | cut -d'.' -f1,2)
-KUBERNETES_TAG_BRANCH=v${version}
-ACS_VERSION=${version}-${acs_patch_version}
-ACS_BRANCH_NAME=acs-v${ACS_VERSION}
-DIST_DIR=${ACS_ENGINE_HOME}/_dist/k8s-windows-v${ACS_VERSION}/k
+if [[ "$version" != "" ]]
+then
+  KUBERNETES_RELEASE=$(echo $version | cut -d'.' -f1,2)
+  KUBERNETES_TAG_BRANCH=v${version}
+  KUBECTL_VERSION=${version}
+  ACS_VERSION=${version}-${acs_patch_version}
+  ACS_BRANCH_NAME=acs-v${ACS_VERSION}
+  DIST_DIR=${ACS_ENGINE_HOME}/_dist/k8s-windows-v${ACS_VERSION}/k
+else
+  KUBECTL_VERSION="1.10.2"
+  ACS_VERSION="latest"
+  ACS_BRANCH_NAME=acs-${ACS_VERSION}
+  DIST_DIR=${ACS_ENGINE_HOME}/_dist/k8s-windows-v${ACS_VERSION}/k
+fi
 
 fetch_k8s() {
 	git clone https://github.com/Azure/kubernetes ${GOPATH}/src/k8s.io/kubernetes || true
@@ -53,7 +59,12 @@ set_git_config() {
 }
 
 create_version_branch() {
+if [[ "$version" != "" ]]
+then
 	git checkout -b ${ACS_BRANCH_NAME} ${KUBERNETES_TAG_BRANCH} || true
+else
+	git checkout -b ${ACS_BRANCH_NAME} || true
+fi
 }
 
 version_lt() {
@@ -258,7 +269,7 @@ apply_acs_cherry_picks() {
 		k8s_17_cherry_pick
 	elif [ "${KUBERNETES_RELEASE}" == "1.8" ]; then
 		k8s_18_cherry_pick
-	elif version_ge "${KUBERNETES_RELEASE}" "1.9"; then
+	elif version_ge "${KUBERNETES_RELEASE}" "1.9" || [ "${version}" == "" ]; then
 		echo "No need to cherry-pick for version greater than or equal to 1.9!"
 	else
 		echo "Unable to apply cherry picks for ${KUBERNETES_RELEASE}."
@@ -283,7 +294,7 @@ build_kubeproxy() {
 }
 
 download_kubectl() {
-	kubectl="https://storage.googleapis.com/kubernetes-release/release/v${version}/bin/windows/amd64/kubectl.exe"
+	kubectl="https://storage.googleapis.com/kubernetes-release/release/v${KUBECTL_VERSION}/bin/windows/amd64/kubectl.exe"
 	echo "dowloading ${kubectl} ..."
 	wget ${kubectl} -P k
 	curl ${kubectl} -o ${DIST_DIR}/kubectl.exe
@@ -330,7 +341,6 @@ fetch_k8s
 set_git_config
 create_version_branch
 apply_acs_cherry_picks
-
 # Due to what appears to be a bug in the Kubernetes Windows build system, one
 # has to first build a linux binary to generate _output/bin/deepcopy-gen.
 # Building to Windows w/o doing this will generate an empty deepcopy-gen.
