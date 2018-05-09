@@ -49,13 +49,14 @@ fi
 if [[ "$version" != "latest" ]]
 then
   KUBERNETES_RELEASE=$(echo $version | cut -d'.' -f1,2)
+  KUBERNETES_VERSION=${KUBERNETES_RELEASE}
   KUBERNETES_TAG_BRANCH=v${version}
   ACS_VERSION=${version}-${acs_patch_version}
   ACS_BRANCH_NAME=acs-v${ACS_VERSION}
   TOP_DIR=${ACS_ENGINE_HOME}/_dist/k8s-windows-v${ACS_VERSION}
   DIST_DIR=${TOP_DIR}/k
 else
-  KUBERNETES_RELEASE="1.10.2"
+  KUBERNETES_VERSION="1.10.2"
   ACS_VERSION=${version}
   ACS_BRANCH_NAME="acs"
   TOP_DIR=${ACS_ENGINE_HOME}/_dist/k8s-windows-v${ACS_VERSION}
@@ -291,6 +292,8 @@ apply_acs_cherry_picks() {
 		k8s_18_cherry_pick
 	elif version_ge "${KUBERNETES_RELEASE}" "1.9"; then
 		echo "No need to cherry-pick for version greater than or equal to 1.9!"
+	elif [ "$version" == "latest" ];then
+		echo "No need to cherry-pick for version greater than or equal to 1.9!"
 	else
 		echo "Unable to apply cherry picks for ${KUBERNETES_RELEASE}."
 		exit 1
@@ -303,13 +306,13 @@ create_dist_dir() {
 
 build_kubelet() {
 	echo "building kubelet.exe..."
-	build/run.sh make WHAT=cmd/kubelet KUBE_BUILD_PLATFORMS=windows/amd64
+	${GOPATH}/src/k8s.io/kubernetes/build/run.sh make WHAT=cmd/kubelet KUBE_BUILD_PLATFORMS=windows/amd64
 	cp ${GOPATH}/src/k8s.io/kubernetes/_output/dockerized/bin/windows/amd64/kubelet.exe ${DIST_DIR}
 }
 
 build_kubeproxy() {
 	echo "building kube-proxy.exe..."
-	build/run.sh make WHAT=cmd/kube-proxy KUBE_BUILD_PLATFORMS=windows/amd64
+	${GOPATH}/src/k8s.io/kubernetes/build/run.sh make WHAT=cmd/kube-proxy KUBE_BUILD_PLATFORMS=windows/amd64
 	cp ${GOPATH}/src/k8s.io/kubernetes/_output/dockerized/bin/windows/amd64/kube-proxy.exe ${DIST_DIR}
 }
 
@@ -331,7 +334,7 @@ get_kube_binaries() {
 		# Due to what appears to be a bug in the Kubernetes Windows build system, one
 		# has to first build a linux binary to generate _output/bin/deepcopy-gen.
 		# Building to Windows w/o doing this will generate an empty deepcopy-gen.
-		build/run.sh make WHAT=cmd/kubelet KUBE_BUILD_PLATFORMS=linux/amd64
+		${GOPATH}/src/k8s.io/kubernetes/build/run.sh make WHAT=cmd/kubelet KUBE_BUILD_PLATFORMS=linux/amd64
 
 		build_kubelet
 		build_kubeproxy
@@ -342,7 +345,7 @@ get_kube_binaries() {
 		echo "downloading kubelet/kubeproxy/kubectl from upstream..."
 		WIN_TAR=kubernetes-node-windows-amd64.tar.gz
 		SUB_DIR=kubernetes/node/bin
-		curl -L https://storage.googleapis.com/kubernetes-release/release/v${KUBERNETES_RELEASE}/${WIN_TAR} -o ${TOP_DIR}/${WIN_TAR}
+		curl -L https://storage.googleapis.com/kubernetes-release/release/v${version}/${WIN_TAR} -o ${TOP_DIR}/${WIN_TAR}
 		tar -xzvf ${TOP_DIR}/${WIN_TAR} -C ${TOP_DIR}
 		cp ${TOP_DIR}/${SUB_DIR}/kubelet.exe ${DIST_DIR}
 		cp ${TOP_DIR}/${SUB_DIR}/kube-proxy.exe ${DIST_DIR}
