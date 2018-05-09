@@ -7,45 +7,70 @@ usage() {
 	echo "$0 [-v version] [-p acs_patch_version]"
 	echo " -v <version>: version"
 	echo " -p <patched version>: acs_patch_version"
+	echo " -u to clone the kubernetes repo as master"
+	echo " -l to use the latest versions"
 }
 
-while getopts ":v:p:" opt; do
+while getopts ":v:p:hul" opt; do
   case ${opt} in
     v)
-      version=${OPTARG}
+        version=${OPTARG}
       ;;
     p)
-      acs_patch_version=${OPTARG}
+        acs_patch_version=${OPTARG}
       ;;
-    *)
-			usage
-			exit
+    h)
+        usage
+        exit
+      ;;
+     u)
+	upstream=true
+      ;;
+      l)
+        version="latest"
+      ;;
+      *)
+         usage
+         exit
       ;;
   esac
 done
 
-if [ -z "${version}" ] || [ -z "${acs_patch_version}" ]; then
-    usage
-		exit 1
+if [ -z "${version}" ] ; then
+        usage
+	exit 1
 fi
 
 if [ -z "${AZURE_STORAGE_CONNECTION_STRING}" ] || [ -z "${AZURE_STORAGE_CONTAINER_NAME}" ]; then
-    echo '$AZURE_STORAGE_CONNECTION_STRING and $AZURE_STORAGE_CONTAINER_NAME need to be set for upload to Azure Blob Storage.'
-		exit 1
+	echo '$AZURE_STORAGE_CONNECTION_STRING and $AZURE_STORAGE_CONTAINER_NAME need to be set for upload to Azure Blob Storage.'
+	exit 1
 fi
 
-KUBERNETES_RELEASE=$(echo $version | cut -d'.' -f1,2)
-KUBERNETES_TAG_BRANCH=v${version}
-ACS_VERSION=${version}-${acs_patch_version}
-ACS_BRANCH_NAME=acs-v${ACS_VERSION}
-TOP_DIR=${ACS_ENGINE_HOME}/_dist/k8s-windows-v${ACS_VERSION}
-DIST_DIR=${TOP_DIR}/k
+if [[ "$version" != "latest" ]]
+then
+  KUBERNETES_RELEASE=$(echo $version | cut -d'.' -f1,2)
+  KUBERNETES_TAG_BRANCH=v${version}
+  ACS_VERSION=${version}-${acs_patch_version}
+  ACS_BRANCH_NAME=acs-v${ACS_VERSION}
+  TOP_DIR=${ACS_ENGINE_HOME}/_dist/k8s-windows-v${ACS_VERSION}
+  DIST_DIR=${TOP_DIR}/k
+else
+  KUBERNETES_RELEASE="1.10.2"
+  ACS_VERSION=${version}
+  ACS_BRANCH_NAME="acs"
+  TOP_DIR=${ACS_ENGINE_HOME}/_dist/k8s-windows-v${ACS_VERSION}
+  DIST_DIR=${TOP_DIR}/k
+fi
 
 fetch_k8s() {
+if [ "$upstream" = "true" ];then
+	git clone https://github.com/kubernetes/kubernetes ${GOPATH}/src/k8s.io/kubernetes || true
+else
 	git clone https://github.com/Azure/kubernetes ${GOPATH}/src/k8s.io/kubernetes || true
 	cd ${GOPATH}/src/k8s.io/kubernetes
 	git remote add upstream https://github.com/kubernetes/kubernetes || true
 	git fetch upstream
+fi
 }
 
 set_git_config() {
@@ -54,7 +79,12 @@ set_git_config() {
 }
 
 create_version_branch() {
+if [[ "$version" != "latest" ]]
+then
 	git checkout -b ${ACS_BRANCH_NAME} ${KUBERNETES_TAG_BRANCH} || true
+else
+	git checkout -b ${ACS_BRANCH_NAME} || true
+fi
 }
 
 version_lt() {
@@ -312,7 +342,7 @@ get_kube_binaries() {
 		echo "downloading kubelet/kubeproxy/kubectl from upstream..."
 		WIN_TAR=kubernetes-node-windows-amd64.tar.gz
 		SUB_DIR=kubernetes/node/bin
-		curl -L https://storage.googleapis.com/kubernetes-release/release/v${version}/${WIN_TAR} -o ${TOP_DIR}/${WIN_TAR}
+		curl -L https://storage.googleapis.com/kubernetes-release/release/v${KUBERNETES_RELEASE}/${WIN_TAR} -o ${TOP_DIR}/${WIN_TAR}
 		tar -xzvf ${TOP_DIR}/${WIN_TAR} -C ${TOP_DIR}
 		cp ${TOP_DIR}/${SUB_DIR}/kubelet.exe ${DIST_DIR}
 		cp ${TOP_DIR}/${SUB_DIR}/kube-proxy.exe ${DIST_DIR}
@@ -357,9 +387,16 @@ upload_zip_to_blob_storage() {
 
 push_acs_branch() {
 	if version_lt "${KUBERNETES_RELEASE}" "1.9"; then
+		if [[ "$upstream" != "true" ]];then
 		echo "push to azure repo..."
 		cd ${GOPATH}/src/k8s.io/kubernetes
 		git push origin ${ACS_BRANCH_NAME}
+#		else
+#		echo "push to azure repo..."
+#	        cd ${GOPATH}/src/k8s.io/kubernetes
+#       	git remote add upstream https://github.com/Azure/kubernetes || true
+#		git push remote ${ACS_BRANCH_NAME}
+		fi
 	else
 		echo "no need to push to azure repo"
 	fi
