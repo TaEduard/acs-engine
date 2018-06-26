@@ -624,6 +624,9 @@ try
         Write-Log "Set Internet Explorer"
         Set-Explorer
 
+        Write-Log "Start Provisioning script"
+        PREPROVISION_EXTENSION
+
         Write-Log "Setup Complete, reboot computer"
         Restart-Computer
     }
